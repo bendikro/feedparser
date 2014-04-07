@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Universal feed parser
 
 Handles RSS 0.9x, RSS 1.0, RSS 2.0, CDF, Atom 0.3, and Atom 1.0 feeds
@@ -922,9 +923,18 @@ class _FeedParserMixin:
         # address common error where people take data that is already
         # utf-8, presume that it is iso-8859-1, and re-encode it.
         if self.encoding in (u'utf-8', u'utf-8_INVALID_PYTHON_3') and isinstance(output, unicode):
+            self.error_occured = False
+            def error_handler(exc):
+                """This avoids pesky prints to stdout by decode when it fails"""
+                self.error_occured = True
+                l = []
+                return (u"".join(l), exc.end)
             try:
-                output = output.encode('iso-8859-1').decode('utf-8')
-            except (UnicodeEncodeError, UnicodeDecodeError):
+                codecs.register_error("decoding-error-handler", error_handler)
+                output2 = output.encode('iso-8859-1').decode('utf-8', "decoding-error-handler")
+                if not self.error_occured:
+                    output = output2
+            except (UnicodeEncodeError, UnicodeDecodeError) as e:
                 pass
 
         # map win-1252 extensions to the proper code points
@@ -950,6 +960,7 @@ class _FeedParserMixin:
                     # query variables in urls in link elements are improperly
                     # converted from `?a=1&b=2` to `?a=1&b;=2` as if they're
                     # unhandled character references. fix this special case.
+                    output = re.sub("&amp;", "&", output)
                     output = re.sub("&([A-Za-z0-9_]+);", "&\g<1>", output)
                     self.entries[-1][element] = output
                     if output:
@@ -2612,7 +2623,7 @@ class _FeedURLHandler(urllib2.HTTPDigestAuthHandler, urllib2.HTTPRedirectHandler
         self.reset_retry_count()
         return retry
 
-def _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers):
+def _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers, timeout=None):
     """URL, filename, or string --> stream
 
     This function lets you define parsers that take any input source
@@ -2676,7 +2687,7 @@ def _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, h
         opener = urllib2.build_opener(*tuple(handlers + [_FeedURLHandler()]))
         opener.addheaders = [] # RMK - must clear so we only send our custom User-Agent
         try:
-            return opener.open(request)
+            return opener.open(request, timeout=timeout)
         finally:
             opener.close() # JohnD
 
@@ -3027,6 +3038,9 @@ def _parse_date_hungarian(dateString):
                  'zonediff': m.group(6)}
     return _parse_date_w3dtf(w3dtfdate)
 registerDateHandler(_parse_date_hungarian)
+
+# Not used, but this had a bug, so mst be looked at
+_rfc822_hour = "(?P<hour>\d{1,2}):(?P<minute>\d{2})(?::(?P<second>\d{2}))?"
 
 timezonenames = {
     'ut': 0, 'gmt': 0, 'z': 0,
@@ -3606,7 +3620,7 @@ def _parse_georss_box(value, swap=True, dims=2):
 # end geospatial parsers
 
 
-def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, referrer=None, handlers=None, request_headers=None, response_headers=None):
+def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, referrer=None, handlers=None, request_headers=None, response_headers=None, timeout=None):
     '''Parse a feed from a URL, file, stream, or string.
 
     request_headers, if given, is a dict from http header name to value to add
@@ -3627,7 +3641,7 @@ def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, refer
     if not isinstance(handlers, list):
         handlers = [handlers]
     try:
-        f = _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers)
+        f = _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers, timeout=timeout)
         data = f.read()
     except Exception, e:
         result['bozo'] = 1
