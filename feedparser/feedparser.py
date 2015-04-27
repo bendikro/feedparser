@@ -2797,7 +2797,7 @@ class _FeedURLHandler(urllib2.HTTPDigestAuthHandler, urllib2.HTTPRedirectHandler
         self.reset_retry_count()
         return retry
 
-def _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers):
+def _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers, timeout=None):
     """URL, filename, or string --> stream
 
     This function lets you define parsers that take any input source
@@ -2863,7 +2863,7 @@ def _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, h
         opener = urllib2.build_opener(*tuple(handlers + [_FeedURLHandler()]))
         opener.addheaders = [] # RMK - must clear so we only send our custom User-Agent
         try:
-            return opener.open(request)
+            return opener.open(request, timeout=timeout)
         finally:
             opener.close() # JohnD
 
@@ -3815,7 +3815,7 @@ def _parse_georss_box(value, swap=True, dims=2):
 # end geospatial parsers
 
 
-def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, referrer=None, handlers=None, request_headers=None, response_headers=None):
+def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, referrer=None, handlers=None, request_headers=None, response_headers=None, timeout='Global'):
     '''Parse a feed from a URL, file, stream, or string.
 
     request_headers, if given, is a dict from http header name to value to add
@@ -3830,6 +3830,9 @@ def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, refer
         request_headers = {}
     if response_headers is None:
         response_headers = {}
+    if timeout == 'Global':
+        import socket
+        timeout = socket.getdefaulttimeout()
 
     result = FeedParserDict()
     result['feed'] = FeedParserDict()
@@ -3838,7 +3841,7 @@ def parse(url_file_stream_or_string, etag=None, modified=None, agent=None, refer
     if not isinstance(handlers, list):
         handlers = [handlers]
     try:
-        f = _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers)
+        f = _open_resource(url_file_stream_or_string, etag, modified, agent, referrer, handlers, request_headers, timeout)
         data = f.read()
     except Exception, e:
         result['bozo'] = 1
